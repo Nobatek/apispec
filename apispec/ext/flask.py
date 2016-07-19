@@ -68,7 +68,21 @@ def path_from_view(spec, view, **kwargs):
     path = flaskpath2swagger(rule.rule)
     app_root = current_app.config['APPLICATION_ROOT'] or '/'
     path = urljoin(app_root.rstrip('/') + '/', path.lstrip('/'))
-    operations = utils.load_operations_from_docstring(view.__doc__)
+
+    # MethodView
+    view_class = getattr(view, 'view_class', None)
+    if view_class is not None:
+
+        methods = getattr(view, 'methods', list())
+        operations = {}
+        for method in methods:
+            function = getattr(view_class, method.lower())
+            operations.update(utils.load_operations_from_docstring(function.__doc__))
+
+    # Function
+    else:
+        operations = utils.load_operations_from_docstring(view.__doc__)
+
     path = Path(path=path, operations=operations)
     return path
 

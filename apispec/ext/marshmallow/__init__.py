@@ -110,10 +110,24 @@ def schema_path_helper(spec, view, **kwargs):
         #                                                    'items': {'$ref': '#/definitions/User'}}}}}}}
 
     """
-    operations = (
-        load_operations_from_docstring(view.__doc__) or
-        kwargs.get('operations')
-    )
+
+    # MethodView
+    view_class = getattr(view, 'view_class', None)
+    if view_class is not None:
+
+        methods = getattr(view, 'methods', list())
+        operations = {}
+        for method in methods:
+            function = getattr(view_class, method.lower())
+            operations.update(load_operations_from_docstring(function.__doc__))
+
+    # Function
+    else:
+
+        operations = load_operations_from_docstring(view.__doc__)
+
+    operations = operations or kwargs.get('operations')
+
     if not operations:
         return
     operations = operations.copy()
