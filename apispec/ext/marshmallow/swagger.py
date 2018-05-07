@@ -292,7 +292,7 @@ _VALID_PROPERTIES = {
 _VALID_PREFIX = 'x-'
 
 
-def field2property(field, spec=None, use_refs=True, dump=True, name=None):
+def field2property(field, spec, use_refs=True, dump=True, name=None):
     """Return the JSON Schema property definition given a marshmallow
     :class:`Field <marshmallow.fields.Field>`.
 
@@ -302,17 +302,13 @@ def field2property(field, spec=None, use_refs=True, dump=True, name=None):
     https://github.com/OAI/OpenAPI-Specification/blob/master/versions/2.0.md#schemaObject
 
     :param Field field: A marshmallow field.
-    :param APISpec spec: Optional `APISpec` containing refs.
+    :param APISpec spec: `APISpec` containing refs.
     :param bool use_refs: Use JSONSchema ``refs``.
     :param bool dump: Introspect dump logic.
     :param str name: The definition name, if applicable, used to construct the $ref value.
     :rtype: dict, a Property Object
     """
-    if spec:
-        openapi_major_version = spec.openapi_version.version[0]
-    else:
-        # Default to 2 for backward compatibility
-        openapi_major_version = 2
+    openapi_major_version = spec.openapi_version.version[0]
 
     from apispec.ext.marshmallow import resolve_schema_dict
     type_, fmt = _get_json_type_for_field(field)
@@ -339,8 +335,7 @@ def field2property(field, spec=None, use_refs=True, dump=True, name=None):
             field2range,
             field2length,
     ):
-        ret.update(attr_func(
-            field, openapi_major_version=openapi_major_version))
+        ret.update(attr_func(field, openapi_major_version=openapi_major_version))
 
     if isinstance(field, marshmallow.fields.Nested):
         del ret['type']
@@ -368,21 +363,19 @@ def field2property(field, spec=None, use_refs=True, dump=True, name=None):
                     ret.update({'allOf': [ref_schema]})
                 else:
                     ret.update(ref_schema)
-        elif spec:
+        else:
             schema_dict = resolve_schema_dict(spec, field.schema, dump=dump)
             if ret and '$ref' in schema_dict:
                 ret.update({'allOf': [schema_dict]})
             else:
                 ret.update(schema_dict)
-        else:
-            ret.update(schema2jsonschema(field.schema, dump=dump))
     elif isinstance(field, marshmallow.fields.List):
-        ret['items'] = field2property(field.container, spec=spec, use_refs=use_refs, dump=dump)
+        ret['items'] = field2property(field.container, spec, use_refs=use_refs, dump=dump)
     elif isinstance(field, marshmallow.fields.Dict):
         if MARSHMALLOW_VERSION_INFO[0] >= 3:
             if field.value_container:
                 ret['additionalProperties'] = field2property(
-                    field.value_container, spec=spec, use_refs=use_refs, dump=dump)
+                    field.value_container, spec, use_refs=use_refs, dump=dump)
 
     # Dasherize metadata that starts with x_
     metadata = {
@@ -399,7 +392,7 @@ def field2property(field, spec=None, use_refs=True, dump=True, name=None):
     return ret
 
 
-def schema2parameters(schema, **kwargs):
+def schema2parameters(schema, spec, **kwargs):
     """Return an array of OpenAPI parameters given a given marshmallow
     :class:`Schema <marshmallow.Schema>`. If `default_in` is "body", then return an array
     of a single parameter; else return an array of a parameter for each included field in
@@ -415,10 +408,10 @@ def schema2parameters(schema, **kwargs):
         raise ValueError(
             "{0!r} doesn't have either `fields` or `_declared_fields`".format(schema)
         )
-    return fields2parameters(fields, schema, **kwargs)
+    return fields2parameters(fields, spec, schema, **kwargs)
 
 
-def fields2parameters(fields, schema=None, spec=None, use_refs=True,
+def fields2parameters(fields, spec, schema=None, use_refs=True,
                       default_in='body', name='body', required=False,
                       use_instances=False, description=None, **kwargs):
     """Return an array of OpenAPI parameters given a mapping between field names and
@@ -435,7 +428,7 @@ def fields2parameters(fields, schema=None, spec=None, use_refs=True,
             from apispec.ext.marshmallow import resolve_schema_dict
             prop = resolve_schema_dict(spec, schema, dump=False, use_instances=use_instances)
         else:
-            prop = fields2jsonschema(fields, spec=spec, use_refs=use_refs, dump=False)
+            prop = fields2jsonschema(fields, spec, use_refs=use_refs, dump=False)
 
         param = {
             'in': swagger_default_in,
@@ -461,8 +454,8 @@ def fields2parameters(fields, schema=None, spec=None, use_refs=True,
         if (field_name in exclude_fields or field_obj.dump_only or field_name in dump_only_fields):
             continue
         param = field2parameter(field_obj,
+                                spec,
                                 name=_observed_name(field_obj, field_name),
-                                spec=spec,
                                 use_refs=use_refs,
                                 default_in=default_in)
         if param['in'] == 'body' and body_param is not None:
@@ -477,14 +470,14 @@ def fields2parameters(fields, schema=None, spec=None, use_refs=True,
     return parameters
 
 
-def field2parameter(field, name='body', spec=None, use_refs=True, default_in='body'):
+def field2parameter(field, spec, name='body', use_refs=True, default_in='body'):
     """Return an OpenAPI parameter as a `dict`, given a marshmallow
     :class:`Field <marshmallow.Field>`.
 
     https://github.com/OAI/OpenAPI-Specification/blob/master/versions/2.0.md#parameterObject
     """
     location = field.metadata.get('location', None)
-    prop = field2property(field, spec=spec, use_refs=use_refs, dump=False)
+    prop = field2property(field, spec, use_refs=use_refs, dump=False)
     return property2parameter(
         prop,
         name=name,
@@ -534,7 +527,7 @@ def property2parameter(prop, name='body', required=False, multiple=False, locati
     return ret
 
 
-def schema2jsonschema(schema, spec=None, use_refs=True, dump=True, name=None):
+def schema2jsonschema(schema, spec, use_refs=True, dump=True, name=None):
     if hasattr(schema, 'fields'):
         fields = schema.fields
     elif hasattr(schema, '_declared_fields'):
@@ -544,10 +537,10 @@ def schema2jsonschema(schema, spec=None, use_refs=True, dump=True, name=None):
             "{0!r} doesn't have either `fields` or `_declared_fields`".format(schema)
         )
 
-    return fields2jsonschema(fields, schema, spec=spec, use_refs=use_refs, dump=dump, name=name)
+    return fields2jsonschema(fields, spec, schema, use_refs=use_refs, dump=dump, name=name)
 
 
-def fields2jsonschema(fields, schema=None, spec=None, use_refs=True, dump=True, name=None):
+def fields2jsonschema(fields, spec, schema=None, use_refs=True, dump=True, name=None):
     """Return the JSON Schema Object for a given marshmallow
     :class:`Schema <marshmallow.Schema>`. Schema may optionally provide the ``title`` and
     ``description`` class Meta options.
@@ -609,7 +602,7 @@ def fields2jsonschema(fields, schema=None, spec=None, use_refs=True, dump=True, 
 
         observed_field_name = _observed_name(field_obj, field_name)
         prop_func = lambda field_obj=field_obj: field2property(  # flake8: noqa
-            field_obj, spec=spec, use_refs=use_refs, dump=dump, name=name)
+            field_obj, spec, use_refs=use_refs, dump=dump, name=name)
         jsonschema['properties'][observed_field_name] = prop_func
 
         partial = getattr(schema, 'partial', None)
